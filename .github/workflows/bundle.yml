@@ -1,0 +1,81 @@
+name: Build Kernel Bundle
+
+on:
+  workflow_run:
+    workflows: ["Build Kernel"]   # HARUS sama dengan "name" di build.yml
+    types:
+      - completed
+
+  workflow_dispatch:
+    inputs:
+      kernel_version:
+        description: "Kernel version (e.g., 7.1)"
+        required: true
+        default: "7.1"
+
+jobs:
+  bundle:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    # 智能判断版本号
+    - name: Determine Kernel Version
+      id: set_version
+      run: |
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          echo "VERSION=${{ github.event.inputs.kernel_version }}" >> $GITHUB_ENV
+        else
+          echo "VERSION=7.1" >> $GITHUB_ENV
+        fi
+
+    - name: Download all source releases from Xiaomi-pad-6s-pro-Linux
+      run: |
+        mkdir bundle && cd bundle
+
+        echo "⬇️ 从目标仓库下载 kernel packages..."
+        gh release download "kernel-${{ env.VERSION }}" \
+          --pattern "*.deb" --pattern "*.rpm" --pattern "*.pkg.tar.zst" \
+          --repo "code002-2/Xiaomi-pad-6s-pro-Linux" \
+          --clobber || true
+
+        echo "⬇️ 从目标仓库下载 sheng_devauth..."
+        gh release download "sheng_devauth" \
+          --pattern "*.deb" --pattern "*.rpm" --pattern "*.pkg.tar.zst" \
+          --repo "code002-2/Xiaomi-pad-6s-pro-Linux" \
+          --clobber || true
+
+        echo "⬇️ 从目标仓库下载 sensor..."
+        gh release download "sensor" \
+          --pattern "*.deb" --pattern "*.rpm" --pattern "*.pkg.tar.zst" \
+          --repo "code002-2/Xiaomi-pad-6s-pro-Linux" \
+          --clobber || true
+
+        echo "📂 最终打包的文件列表:"
+        ls -lah
+
+        # 检查是否下载到了足够的包
+        COUNT=$(ls *.{deb,rpm,zst} 2>/dev/null | wc -l)
+        if [ "$COUNT" -lt 5 ]; then
+          echo "❌ 下载的包数量不足！当前数量: $COUNT"
+          exit 1
+        fi
+
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create bundle release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: kernel-bundle-${{ env.VERSION }}
+        name: Kernel Bundle ${{ env.VERSION }}
+        files: |
+          bundle/*.deb
+          bundle/*.rpm
+          bundle/*.pkg.tar.zst
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
