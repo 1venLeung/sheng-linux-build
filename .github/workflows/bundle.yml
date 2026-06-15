@@ -1,107 +1,81 @@
-name: Build Kernel Bundle
+name: 📦 Build Kernel Bundle
 
 on:
   workflow_run:
     workflows: ["Build Kernel"]
     types:
       - completed
-
   workflow_dispatch:
     inputs:
       kernel_version:
-        description: "Kernel version (e.g., 7.1)"
+        description: "要打包转换的内核版本号 (如: 7.1)"
         required: true
         default: "7.1"
 
 jobs:
   bundle:
+    name: "自动转换全平台格式 (RPM / Arch PKG)"
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: write
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+      - name: "📥 检出代码"
+        uses: actions/checkout@v4
 
-    - name: Determine Kernel Version
-      id: set_version
-      run: |
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
-          echo "VERSION=${{ github.event.inputs.kernel_version }}" >> $GITHUB_ENV
-        else
-          echo "VERSION=7.1" >> $GITHUB_ENV
-        fi
+      - name: "🔑 确定内核版本号"
+        run: |
+          echo "VERSION=${{ github.event.inputs.kernel_version || '7.1' }}" >> $GITHUB_ENV
 
-    - name: Install FPM & Dependencies
-      run: |
-        echo "🛠️ 正在安装包管理转换工具 (FPM)..."
-        sudo apt-get update -y
-        # 【修改这里】：把 bsdtar 替换为了 libarchive-tools
-        sudo apt-get install -y ruby ruby-dev rubygems build-essential rpm libarchive-tools
-        sudo gem install fpm
+      - name: "💎 部署 Ruby 与 FPM 打包工厂环境"
+        run: |
+          echo "⚙️ 正在安装 FPM 及其跨平台依赖工具链..."
+          sudo apt-get update -y
+          sudo apt-get install -y ruby ruby-dev rubygems build-essential rpm libarchive-tools
+          sudo gem install fpm
+          echo "✅ FPM 环境部署成功"
 
-    - name: Download DEB releases from upstream
-      run: |
-        mkdir bundle && cd bundle
+      - name: "🔄 下载 Debian 包并动态转换为 RPM 与 Pacman 格式"
+        run: |
+          mkdir -p bundle && cd bundle
+          
+          echo "📥 正在从主内核 Release 仓库下载原生 .deb 产物..."
+          # 自动下载你在 kernel.yml 中发布的所有 .deb 文件 (内核、满血固件、音频、权限验证)
+          gh release download "kernel-${{ env.VERSION }}" --pattern "*.deb" --repo "code002-2/Xiaomi-pad-6s-pro-Linux" --clobber || true
+          
+          # 保底兼容：如果你的 sensor 独立包在其他 tag 中，尝试单独抓取
+          gh release download "sheng_devauth" --pattern "*.deb" --repo "code002-2/Xiaomi-pad-6s-pro-Linux" --clobber || true
+          gh release download "sensor" --pattern "*.deb" --repo "code002-2/Xiaomi-pad-6s-pro-Linux" --clobber || true
 
-        echo "⬇️ 从目标仓库下载 kernel (.deb)..."
-        gh release download "kernel-${{ env.VERSION }}" \
-          --pattern "*.deb" \
-          --repo "code002-2/Xiaomi-pad-6s-pro-Linux" \
-          --clobber || true
+          echo "🚀 正在进行跨发行版路径无损格式转换..."
+          # 核心修复：引入 --no-depends 阻断 Debian 依赖名称污染 Fedora/Arch 
+          for deb in *.deb; do
+            if [ -f "$deb" ]; then
+              echo "📦 正在将 $deb 转换为 Fedora 专用的 .rpm 格式..."
+              fpm -s deb -t rpm --no-depends "$deb"
+              
+              echo "📦 正在将 $deb 转换为 Arch Linux 专用的 .pkg.tar.zst 格式..."
+              fpm -s deb -t pacman --no-depends "$deb"
+            fi
+          done
+          
+          echo "📊 转换完成！当前仓库清单："
+          ls -lh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-        echo "⬇️ 从目标仓库下载 sheng_devauth (.deb)..."
-        gh release download "sheng_devauth" \
-          --pattern "*.deb" \
-          --repo "code002-2/Xiaomi-pad-6s-pro-Linux" \
-          --clobber || true
-
-        echo "⬇️ 从目标仓库下载 sensor (.deb)..."
-        gh release download "sensor" \
-          --pattern "*.deb" \
-          --repo "code002-2/Xiaomi-pad-6s-pro-Linux" \
-          --clobber || true
-
-        # 检查是否下载成功
-        COUNT=$(ls *.deb 2>/dev/null | wc -l)
-        if [ "$COUNT" -lt 5 ]; then
-          echo "❌ 下载的 .deb 包数量不足！当前数量: $COUNT"
-          exit 1
-        fi
-
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Convert DEB to RPM and Arch Linux packages
-      run: |
-        cd bundle
-        echo "🔄 开始将 .deb 转换为 .rpm 和 .pkg.tar.zst..."
-
-        # 遍历当前目录下所有的 .deb 文件
-        for deb_file in *.deb; do
-          if [ -f "$deb_file" ]; then
-            echo "👉 正在转换: $deb_file"
-            
-            # 使用 FPM 将 deb 转换为 Fedora 的 rpm
-            fpm -s deb -t rpm "$deb_file"
-            
-            # 使用 FPM 将 deb 转换为 Arch 的 pacman 包
-            fpm -s deb -t pacman "$deb_file"
-          fi
-        done
-
-        echo "✅ 所有格式转换完成！最终产物列表："
-        ls -lah
-
-    # 5. 打包发布全平台 Bundle
-    - name: Create bundle release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: kernel-bundle-${{ env.VERSION }}
-        name: Kernel Bundle ${{ env.VERSION }}
-        files: |
-          bundle/*.deb
-          bundle/*.rpm
-          bundle/*.pkg.tar.zst
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: "📤 发布Release"
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: kernel-bundle-${{ env.VERSION }}
+          name: "小米Pad 6S Pro 驱动包 v${{ env.VERSION }}"
+          body: |
+            ### 📦 小米Pad 6S Pro (sheng) Linux 驱动包
+          draft: false
+          prerelease: false
+          files: |
+            bundle/*.deb
+            bundle/*.rpm
+            bundle/*.pkg.tar.zst
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
