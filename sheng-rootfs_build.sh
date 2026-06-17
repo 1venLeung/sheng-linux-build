@@ -52,9 +52,30 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
         echo "LANG=zh_CN.UTF-8" > rootdir/etc/locale.conf
         chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y fonts-noto-cjk fonts-wqy-microhei fcitx5 fcitx5-chinese-addons"
 
-        cp *.deb rootdir/tmp/ 2>/dev/null || true
-        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 initramfs-tools"
-        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y /tmp/*.deb" || true
+        mapfile -t DRIVER_DEBS < <(find . -maxdepth 1 -type f -name "*.deb" -printf "%f\n" | sort)
+        if [ "${#DRIVER_DEBS[@]}" -eq 0 ]; then
+            echo "No Debian driver packages found before rootfs install"
+            exit 1
+        fi
+
+        DRIVER_PACKAGES=()
+        for deb in "${DRIVER_DEBS[@]}"; do
+            pkg="$(dpkg-deb -f "$deb" Package)"
+            test -n "$pkg" || { echo "Cannot read package name from $deb"; exit 1; }
+            DRIVER_PACKAGES+=("$pkg")
+            echo "Will install release Debian package: $deb -> $pkg"
+        done
+        cp "${DRIVER_DEBS[@]}" rootdir/tmp/
+
+        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 initramfs-tools alsa-ucm-conf"
+        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y /tmp/*.deb"
+        chroot rootdir bash -c "dpkg --configure -a && apt-get -f install -y"
+        chroot rootdir bash -c "dpkg-query -W -f='\${Package} \${Status}\n' ${DRIVER_PACKAGES[*]}"
+        for pkg in "${DRIVER_PACKAGES[@]}"; do
+            chroot rootdir dpkg-query -W -f='${Status}' "$pkg" | grep -q '^install ok installed$'
+            echo "Verified release Debian package installed: $pkg"
+        done
+        chroot rootdir test -x /usr/bin/xiaomi_devauth
         
         chroot rootdir bash -c "echo 'root:$CUSTOM_PASS' | chpasswd"
         echo "debian-$FLAVOUR-$MODE" > rootdir/etc/hostname
