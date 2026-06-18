@@ -101,6 +101,20 @@ EOF
             echo "Added ath12k board.bin compatibility symlink"
         fi
 
+        # Debian 13's firmware-qcom-soc (20250410-2) predates the Adreno 740
+        # SQE firmware. Install the upstream blob explicitly and pin its digest
+        # so the image never accepts silently changed firmware.
+        if ! chroot rootdir test -e /usr/lib/firmware/qcom/a740_sqe.fw; then
+            A740_SQE_URL="https://gitlab.com/kernel-firmware/linux-firmware/-/raw/main/qcom/a740_sqe.fw"
+            A740_SQE_SHA256="96fee336424b139100fc60b5b45a907360e4b3936d7e1d00406b9bd80ca48473"
+            install -d rootdir/usr/lib/firmware/qcom
+            curl --fail --location --retry 3 \
+                --output rootdir/usr/lib/firmware/qcom/a740_sqe.fw \
+                "$A740_SQE_URL"
+            echo "$A740_SQE_SHA256  rootdir/usr/lib/firmware/qcom/a740_sqe.fw" | sha256sum --check -
+            echo "Installed verified Adreno 740 SQE firmware"
+        fi
+
         for required_path in \
             usr/lib/firmware/nanosic/MCU_Upgrade.bin \
             usr/lib/firmware/novatek/novatek_nt36532e_fw.bin \
