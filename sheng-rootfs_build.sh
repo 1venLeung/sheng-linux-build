@@ -67,7 +67,7 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
         done
         cp "${DRIVER_DEBS[@]}" rootdir/tmp/
 
-        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2 libgudev-1.0-0 libpolkit-gobject-1-0 initramfs-tools alsa-ucm-conf kmod qrtr-tools"
+        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2 libgudev-1.0-0 libpolkit-gobject-1-0 initramfs-tools alsa-ucm-conf kmod qrtr-tools iw wireless-regdb"
         chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get -o Dpkg::Options::='--force-overwrite' install -y /tmp/*.deb"
         chroot rootdir bash -c "dpkg --configure -a && apt-get -f install -y"
         chroot rootdir bash -c "dpkg-query -W -f='\${Package} \${Status}\n' ${DRIVER_PACKAGES[*]}"
@@ -154,6 +154,8 @@ EOF
 
         mkdir -p rootdir/etc/udev/rules.d
         printf 'ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="1 0 0 0 1 0 0 0 1"\n' > rootdir/etc/udev/rules.d/99-touchscreen-sheng.rules
+        mkdir -p rootdir/etc/modprobe.d
+        printf 'options cfg80211 ieee80211_regdom=CN\n' > rootdir/etc/modprobe.d/cfg80211-regdom.conf
         chroot rootdir systemctl enable qrtr-ns || true
         chroot rootdir systemctl enable adsprpcd-sensorspd.service || true
         chroot rootdir systemctl enable iio-sensor-proxy.service || true
