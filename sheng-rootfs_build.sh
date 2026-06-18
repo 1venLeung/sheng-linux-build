@@ -67,7 +67,7 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
         done
         cp "${DRIVER_DEBS[@]}" rootdir/tmp/
 
-        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 initramfs-tools alsa-ucm-conf"
+        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2 libgudev-1.0-0 libpolkit-gobject-1-0 initramfs-tools alsa-ucm-conf kmod qrtr-tools"
         chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get -o Dpkg::Options::='--force-overwrite' install -y /tmp/*.deb"
         chroot rootdir bash -c "dpkg --configure -a && apt-get -f install -y"
         chroot rootdir bash -c "dpkg-query -W -f='\${Package} \${Status}\n' ${DRIVER_PACKAGES[*]}"
@@ -118,6 +118,14 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
             fi
         done
 
+        KERNEL_MODULE_DIR="$(find rootdir/usr/lib/modules -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -n 1)"
+        if [ -z "$KERNEL_MODULE_DIR" ]; then
+            echo "No kernel module directory found after linux-xiaomi-sheng install"
+            exit 1
+        fi
+        chroot rootdir depmod -a "$KERNEL_MODULE_DIR"
+        echo "Regenerated module dependency indexes for $KERNEL_MODULE_DIR"
+
         mkdir -p rootdir/etc/modules-load.d
         cat > rootdir/etc/modules-load.d/sheng-input.conf <<'EOF'
 hid_generic
@@ -145,8 +153,10 @@ EOF
 
         mkdir -p rootdir/etc/udev/rules.d
         printf 'ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="1 0 0 0 1 0 0 0 1"\n' > rootdir/etc/udev/rules.d/99-touchscreen-sheng.rules
-        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y qrtr-tools || true"
         chroot rootdir systemctl enable qrtr-ns || true
+        chroot rootdir systemctl enable adsprpcd-sensorspd.service || true
+        chroot rootdir systemctl enable iio-sensor-proxy.service || true
+        chroot rootdir systemctl enable sheng-devauth.service || true
         
         chroot rootdir bash -c "echo 'root:$CUSTOM_PASS' | chpasswd"
         echo "debian-$FLAVOUR-$MODE" > rootdir/etc/hostname
