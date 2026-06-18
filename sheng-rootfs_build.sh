@@ -68,7 +68,7 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
         cp "${DRIVER_DEBS[@]}" rootdir/tmp/
 
         chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 initramfs-tools alsa-ucm-conf"
-        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y /tmp/*.deb"
+        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get -o Dpkg::Options::='--force-overwrite' install -y /tmp/*.deb"
         chroot rootdir bash -c "dpkg --configure -a && apt-get -f install -y"
         chroot rootdir bash -c "dpkg-query -W -f='\${Package} \${Status}\n' ${DRIVER_PACKAGES[*]}"
         for pkg in "${DRIVER_PACKAGES[@]}"; do
