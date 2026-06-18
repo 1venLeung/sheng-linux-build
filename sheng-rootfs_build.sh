@@ -76,6 +76,77 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
             echo "Verified release Debian package installed: $pkg"
         done
         chroot rootdir test -x /usr/bin/xiaomi_devauth
+
+        # The current firmware package may place device firmware under /usr/lib
+        # directly. Linux firmware_class searches /lib/firmware, which resolves
+        # to /usr/lib/firmware on Debian usrmerge systems.
+        mkdir -p rootdir/usr/lib/firmware
+        for fwdir in ath12k qcom nanosic cirrus; do
+            if [ -d "rootdir/usr/lib/$fwdir" ]; then
+                rm -rf "rootdir/usr/lib/firmware/$fwdir"
+                cp -a "rootdir/usr/lib/$fwdir" rootdir/usr/lib/firmware/
+                echo "Mirrored $fwdir firmware into /usr/lib/firmware"
+            else
+                echo "Missing optional firmware directory: /usr/lib/$fwdir"
+            fi
+        done
+        if [ -f rootdir/usr/lib/firmware/ath12k/WCN7850/hw2.0/board-2.bin ] && [ ! -e rootdir/usr/lib/firmware/ath12k/WCN7850/hw2.0/board.bin ]; then
+            ln -s board-2.bin rootdir/usr/lib/firmware/ath12k/WCN7850/hw2.0/board.bin
+            echo "Added ath12k board.bin compatibility symlink"
+        fi
+
+        for required_path in \
+            usr/lib/firmware/nanosic/MCU_Upgrade.bin \
+            usr/lib/firmware/ath12k/WCN7850/hw2.0/board-2.bin \
+            usr/lib/firmware/ath12k/WCN7850/hw2.0/board.bin \
+            usr/lib/firmware/qcom/sm8550/sheng \
+            usr/lib/firmware/cirrus; do
+            if [ ! -e "rootdir/$required_path" ]; then
+                echo "Required sheng firmware path is missing after package install: /$required_path"
+                exit 1
+            fi
+        done
+
+        for required_module in \
+            hid-nanosic-wn8030.ko.zst \
+            hid-multitouch.ko.zst \
+            nt36532e_ts.ko.zst \
+            goodix_berlin_spi.ko.zst; do
+            if ! find rootdir/usr/lib/modules -name "$required_module" -print -quit | grep -q .; then
+                echo "Required sheng input/touch module is missing: $required_module"
+                exit 1
+            fi
+        done
+
+        mkdir -p rootdir/etc/modules-load.d
+        cat > rootdir/etc/modules-load.d/sheng-input.conf <<'EOF'
+hid_generic
+hid_multitouch
+hid_nanosic_wn8030
+i2c_hid_of
+i2c_hid_of_elan
+nt36532e_ts
+goodix_ts
+goodix_berlin_core
+goodix_berlin_spi
+EOF
+
+        cat > rootdir/etc/modules-load.d/sheng-platform.conf <<'EOF'
+ath12k
+ath12k_wifi7
+fastrpc
+qcom_battmgr
+qcom_q6v5_pas
+qcom_q6v5_adsp
+qcom_pil_info
+qcom_sysmon
+qcom_glink_smem
+EOF
+
+        mkdir -p rootdir/etc/udev/rules.d
+        printf 'ENV{ID_INPUT_TOUCHSCREEN}=="1", ENV{LIBINPUT_CALIBRATION_MATRIX}="1 0 0 0 1 0 0 0 1"\n' > rootdir/etc/udev/rules.d/99-touchscreen-sheng.rules
+        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y qrtr-tools || true"
+        chroot rootdir systemctl enable qrtr-ns || true
         
         chroot rootdir bash -c "echo 'root:$CUSTOM_PASS' | chpasswd"
         echo "debian-$FLAVOUR-$MODE" > rootdir/etc/hostname
