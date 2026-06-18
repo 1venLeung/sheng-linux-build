@@ -81,7 +81,7 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
         # directly. Linux firmware_class searches /lib/firmware, which resolves
         # to /usr/lib/firmware on Debian usrmerge systems.
         mkdir -p rootdir/usr/lib/firmware
-        for fwdir in ath12k qcom nanosic cirrus; do
+        for fwdir in ath12k qcom nanosic novatek cirrus; do
             if [ -d "rootdir/usr/lib/$fwdir" ]; then
                 rm -rf "rootdir/usr/lib/firmware/$fwdir"
                 cp -a "rootdir/usr/lib/$fwdir" rootdir/usr/lib/firmware/
@@ -97,6 +97,7 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
 
         for required_path in \
             usr/lib/firmware/nanosic/MCU_Upgrade.bin \
+            usr/lib/firmware/novatek/novatek_nt36532e_fw.bin \
             usr/lib/firmware/ath12k/WCN7850/hw2.0/board-2.bin \
             usr/lib/firmware/ath12k/WCN7850/hw2.0/board.bin \
             usr/lib/firmware/qcom/sm8550/sheng \
