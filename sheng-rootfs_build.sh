@@ -111,7 +111,10 @@ EOF
             usr/lib/firmware/regulatory.db \
             usr/lib/firmware/qca/hmtbtfw20.tlv \
             usr/lib/firmware/qcom/a740_sqe.fw; do
-            if [ ! -e "rootdir/$required_path" ]; then
+            # Validate from inside the rootfs so absolute symlinks, such as
+            # regulatory.db -> /lib/firmware/regulatory.db-debian, resolve
+            # against the target filesystem instead of the build runner.
+            if ! chroot rootdir test -e "/$required_path"; then
                 echo "Required sheng firmware path is missing after package install: /$required_path"
                 exit 1
             fi
