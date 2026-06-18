@@ -42,6 +42,12 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
         mount --bind /dev rootdir/dev; mount --bind /dev/pts rootdir/dev/pts
         mount -t proc proc rootdir/proc; mount -t sysfs sys rootdir/sys
 
+        cat > rootdir/etc/apt/sources.list <<EOF
+deb http://deb.debian.org/debian $distro_version main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian-security ${distro_version}-security main contrib non-free non-free-firmware
+deb http://deb.debian.org/debian ${distro_version}-updates main contrib non-free non-free-firmware
+EOF
+
         echo "nameserver 8.8.8.8" > rootdir/etc/resolv.conf
         chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get update && apt-get install -y --no-install-recommends systemd sudo vim wget curl network-manager openssh-server wpasupplicant dbus locales dialog"
 
@@ -67,7 +73,7 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
         done
         cp "${DRIVER_DEBS[@]}" rootdir/tmp/
 
-        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2 libgudev-1.0-0 libpolkit-gobject-1-0 initramfs-tools alsa-ucm-conf kmod qrtr-tools iw wireless-regdb"
+        chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get install -y libglib2.0-0 libprotobuf-c1 libqmi-glib5 libmbim-glib4 libyaml-0-2 libgudev-1.0-0 libpolkit-gobject-1-0 initramfs-tools alsa-ucm-conf kmod qrtr-tools iw wireless-regdb firmware-atheros firmware-qcom-soc"
         chroot rootdir bash -c "export DEBIAN_FRONTEND=noninteractive && apt-get -o Dpkg::Options::='--force-overwrite' install -y /tmp/*.deb"
         chroot rootdir bash -c "dpkg --configure -a && apt-get -f install -y"
         chroot rootdir bash -c "dpkg-query -W -f='\${Package} \${Status}\n' ${DRIVER_PACKAGES[*]}"
@@ -81,11 +87,11 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
         # directly. Linux firmware_class searches /lib/firmware, which resolves
         # to /usr/lib/firmware on Debian usrmerge systems.
         mkdir -p rootdir/usr/lib/firmware
-        for fwdir in ath12k qcom nanosic novatek cirrus; do
+        for fwdir in ath12k qcom qca nanosic novatek cirrus; do
             if [ -d "rootdir/usr/lib/$fwdir" ]; then
-                rm -rf "rootdir/usr/lib/firmware/$fwdir"
-                cp -a "rootdir/usr/lib/$fwdir" rootdir/usr/lib/firmware/
-                echo "Mirrored $fwdir firmware into /usr/lib/firmware"
+                mkdir -p "rootdir/usr/lib/firmware/$fwdir"
+                cp -a "rootdir/usr/lib/$fwdir/." "rootdir/usr/lib/firmware/$fwdir/"
+                echo "Merged $fwdir firmware into /usr/lib/firmware"
             else
                 echo "Missing optional firmware directory: /usr/lib/$fwdir"
             fi
@@ -101,7 +107,10 @@ for FLAVOUR in "${FLAVOURS[@]}"; do
             usr/lib/firmware/ath12k/WCN7850/hw2.0/board-2.bin \
             usr/lib/firmware/ath12k/WCN7850/hw2.0/board.bin \
             usr/lib/firmware/qcom/sm8550/sheng \
-            usr/lib/firmware/cirrus; do
+            usr/lib/firmware/cirrus \
+            usr/lib/firmware/regulatory.db \
+            usr/lib/firmware/qca/hmtbtfw20.tlv \
+            usr/lib/firmware/qcom/a740_sqe.fw; do
             if [ ! -e "rootdir/$required_path" ]; then
                 echo "Required sheng firmware path is missing after package install: /$required_path"
                 exit 1
